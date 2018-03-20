@@ -10,6 +10,7 @@
 #define PARTICLE_FILTER_H_
 
 #include "helper_functions.h"
+#include "random_generator.h"
 
 struct Particle {
 
@@ -30,7 +31,8 @@ class ParticleFilter {
 	// Number of particles to draw
 	int num_particles; 
 	
-	
+	// Random number generator
+	RandomGenerator random_generator;
 	
 	// Flag, if filter is initialized
 	bool is_initialized;
@@ -72,6 +74,12 @@ public:
 	 */
 	void prediction(double delta_t, double std_pos[], double velocity, double yaw_rate);
 	
+
+	/**
+	 * applies the bicycle motion model to a given particle.
+	 */
+	static inline void apply_motion_model(Particle &particle, const double& delta_t, const double& velocity, const double &yaw_rate);
+
 	/**
 	 * dataAssociation Finds which observations correspond to which landmarks (likely by using
 	 *   a nearest-neighbors data association).

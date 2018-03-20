@@ -6,7 +6,7 @@
 
 using namespace std;
 
-// for convenience
+// for conveniencee
 using json = nlohmann::json;
 
 // Checks if the SocketIO event has JSON data.

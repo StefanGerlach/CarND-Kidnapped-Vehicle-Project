@@ -19,20 +19,55 @@
 
 using namespace std;
 
+
 void ParticleFilter::init(double x, double y, double theta, double std[]) {
-	// TODO: Set the number of particles. Initialize all particles to first position (based on estimates of 
+	// Set the number of particles. Initialize all particles to first position (based on estimates of
 	//   x, y, theta and their uncertainties from GPS) and all weights to 1. 
 	// Add random Gaussian noise to each particle.
 	// NOTE: Consult particle_filter.h for more information about this method (and others in this file).
+  num_particles = 500;
 
+  for(int i = 0; i < num_particles; i++) {
+    Particle p;
+    p.id = i;
+    p.weight = 1.0;
+
+    // Setting the position and yaw of the particle with uncertainty of GPU measurement.
+    p.x = random_generator.gaussian(x, std[0]);
+    p.y = random_generator.gaussian(y, std[1]);
+    p.theta = random_generator.gaussian(theta, std[2]);
+
+    // Adding this particle to the vector of internal particles.
+    particles.push_back(p);
+
+    // Adding the weight to the vector of weights
+    weights.push_back(1.0);
+  }
+
+  std::cout << "Initialized particle filter with " << particles.size() << " particles." << std::endl;
+  is_initialized = true;
 }
 
 void ParticleFilter::prediction(double delta_t, double std_pos[], double velocity, double yaw_rate) {
-	// TODO: Add measurements to each particle and add random Gaussian noise.
+	// Add measurements to each particle and add random Gaussian noise.
 	// NOTE: When adding noise you may find std::normal_distribution and std::default_random_engine useful.
 	//  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
 	//  http://www.cplusplus.com/reference/random/default_random_engine/
+  double noisy_velocity = random_generator.gaussian(velocity, std_pos[0]);
+  double noisy_yaw_rate = random_generator.gaussian(yaw_rate, std_pos[1]);
 
+  // PARALLELIZE !
+  for(auto & particle: particles) {
+    apply_motion_model(particle, delta_t, noisy_velocity, noisy_yaw_rate);
+  }
+}
+
+void ParticleFilter::apply_motion_model(Particle &particle, const double& delta_t, const double& velocity, const double &yaw_rate) {
+  // This is the implementation of the simple bicycle motion model, applied to a particle
+  particle.x = particle.x + (velocity / yaw_rate) * (std::sin(particle.theta + (delta_t * yaw_rate)) - std::sin(particle.theta));
+  particle.y = particle.y + (velocity / yaw_rate) * (std::cos(particle.theta) - std::cos(particle.theta + (delta_t * yaw_rate)));
+
+  particle.theta = particle.theta + yaw_rate;
 }
 
 void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::vector<LandmarkObs>& observations) {
