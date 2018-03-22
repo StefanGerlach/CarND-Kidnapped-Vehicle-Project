@@ -87,6 +87,12 @@ public:
 	 * @param observations Vector of landmark observations
 	 */
 	void dataAssociation(std::vector<LandmarkObs> predicted, std::vector<LandmarkObs>& observations);
+	bool dataAssociation(Particle& particle, const std::vector<LandmarkObs> &transformed, const Map &map);
+
+	/*
+	 * Sets the weight of the particle according to the observation - map landmark associations.
+	 **/
+	void setWeight(Particle &particle, const double& std_x, const double& std_y, const std::vector<LandmarkObs> &transformed);
 	
 	/**
 	 * updateWeights Updates the weights for each particle based on the likelihood of the 
@@ -99,6 +105,12 @@ public:
 	void updateWeights(double sensor_range, double std_landmark[], const std::vector<LandmarkObs> &observations,
 			const Map &map_landmarks);
 	
+	/*
+	 * transforms the observed landmarks from vehicle coordinate system to map coordinate system
+	 * */
+	void transformCoordinateSystem(const Particle &particle, std::vector<LandmarkObs> &observations);
+
+
 	/**
 	 * resample Resamples from the updated set of particles to form
 	 *   the new set of particles.

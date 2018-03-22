@@ -60,6 +60,25 @@ inline double dist(double x1, double y1, double x2, double y2) {
 }
 
 
+inline double multi_variant_gaussian_prob(const double& sig_x, const double& sig_y,
+                                          const double& x_obs, const double& y_obs,
+                                          const double& lm_x, const double& lm_y) {
+
+  double prob = 0.0;
+  double epsilon = 1e-8;
+  double normalizer = 2 * M_PI * sig_x * sig_y;
+  // take care of division by zero !
+  if(normalizer < epsilon && normalizer > -epsilon)
+    normalizer += epsilon;
+
+  normalizer = 1.0 / normalizer;
+  prob += std::pow(x_obs - lm_x, 2) / (2.0 * std::pow(sig_x, 2));
+  prob += std::pow(y_obs - lm_y, 2) / (2.0 * std::pow(sig_y, 2));
+  prob = exp(-prob) * normalizer;
+
+  return prob;
+}
+
 inline double * getError(double gt_x, double gt_y, double gt_theta, double pf_x, double pf_y, double pf_theta) {
 	static double error[3];
 	error[0] = fabs(pf_x - gt_x);
