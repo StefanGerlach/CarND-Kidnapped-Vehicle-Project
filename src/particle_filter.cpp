@@ -5,6 +5,8 @@
  *      Author: Tiffany Huang
  */
 
+#define MULTI_THREADING
+
 #include <random>
 #include <algorithm>
 #include <iostream>
@@ -14,6 +16,7 @@
 #include <sstream>
 #include <string>
 #include <iterator>
+#include <thread>
 
 #include "particle_filter.h"
 
@@ -22,8 +25,28 @@ using namespace std;
 
 void ParticleFilter::init(double x, double y, double theta, double std[]) {
 
-  // Test code
-  /*double sig_x = 0.3;
+#if 0
+  // Test code for verification of implementation.
+  // This code will reconstruct the quizzes in Lession 15.
+
+  // Prediction Step
+  Particle p_pred;
+  p_pred.x = 102.0;
+  p_pred.y = 65.0;
+  p_pred.theta = 5.0 * M_PI / 8.0;
+
+  double velocity = 110.0;
+  double yaw_rate = M_PI / 8.0;
+  double delta_t = 0.1; // sec
+  apply_motion_model(p_pred, delta_t, velocity, yaw_rate);
+
+  double solution_theta = 51.0*M_PI / 80.0;
+  double solution_x = 97.59;
+  double solution_y = 75.08;
+
+  // Update step
+
+  double sig_x = 0.3;
   double sig_y = 0.3;
   double x_obs = 6;
   double y_obs = 3;
@@ -31,8 +54,18 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
   double mu_y = 3;
   double d = multi_variant_gaussian_prob(sig_x, sig_y, x_obs, y_obs, mu_x, mu_y);
 
+  Map map;
   std::vector<LandmarkObs> observ(3);
   Particle p;
+
+  Map::single_landmark_s l1, l2, l3, l4, l5;
+  l1.x_f=5.0;  l1.y_f=3.0;
+  l2.x_f=2.0;  l2.y_f=1.0;
+  l3.x_f=6.0;  l3.y_f=1.0;
+  l4.x_f=7.0;  l4.y_f=4.0;
+  l5.x_f=4.0;  l5.y_f=7.0;
+
+  map.landmark_list = {l1, l2, l3, l4, l5};
 
   observ[0].x=2; observ[0].y=2;
   observ[1].x=3; observ[1].y=-2;
@@ -43,13 +76,18 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
   p.theta = -1.5708;
 
   transformCoordinateSystem(p, observ);
-*/
+  dataAssociation(p, observ, map);
+  setWeight(p, 0.3, 0.3, observ);
+#endif
 
 	// Set the number of particles. Initialize all particles to first position (based on estimates of
-	//   x, y, theta and their uncertainties from GPS) and all weights to 1. 
+	// x, y, theta and their uncertainties from GPS) and all weights to 1.
 	// Add random Gaussian noise to each particle.
 	// NOTE: Consult particle_filter.h for more information about this method (and others in this file).
   num_particles = 500;
+
+  // Set the number of threads
+  num_threads = 8;
 
   for(int i = 0; i < num_particles; i++) {
     Particle p;
@@ -77,21 +115,68 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 	// NOTE: When adding noise you may find std::normal_distribution and std::default_random_engine useful.
 	//  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
 	//  http://www.cplusplus.com/reference/random/default_random_engine/
-  double noisy_velocity = random_generator.gaussian(velocity, std_pos[0]);
-  double noisy_yaw_rate = random_generator.gaussian(yaw_rate, std_pos[1]);
 
-  // PARALLELIZE !
+#ifdef MULTI_THREADING
+  // This loop is made to be parallelized
+  // Create lists of particle references for the n threads
+  std::vector<std::vector<Particle*> > particle_vectors(num_threads, std::vector<Particle*>());
+  for(int i = 0; i < particles.size(); i++)
+    particle_vectors[i % num_threads].push_back(&particles[i]);
+
+  // Create a vector of all threads
+  std::vector<std::thread> threads;
+
+  for(auto& particle_vec : particle_vectors)
+    // Add a new thread to the list of threads
+    threads.push_back(std::thread([&](){
+    // This thread will process this lambda function
+    // that applies motion model and position noise to the particle
+      for(auto& particle : particle_vec) {
+        apply_motion_model(*particle, delta_t, velocity, yaw_rate);
+        apply_position_noise(*particle, std_pos[0], std_pos[1], std_pos[2]);
+      }
+    }));
+
+  // Wait for the threads to finish computation
+  for(auto& t : threads)
+    t.join();
+
+#else
+
+  // Single threading variant
   for(auto & particle: particles) {
-    apply_motion_model(particle, delta_t, noisy_velocity, noisy_yaw_rate);
-  }
+      apply_motion_model(particle, delta_t, velocity, yaw_rate);
+      apply_position_noise(particle, std_pos[0], std_pos[1], std_pos[2]);
+    }
+
+#endif
+}
+
+void ParticleFilter::apply_position_noise(Particle &particle, const double& std_x, const double& std_y, const double& std_theta) {
+
+  particle.x = random_generator.gaussian(particle.x, std_x);
+  particle.y = random_generator.gaussian(particle.y, std_y);
+  particle.theta = random_generator.gaussian(particle.theta, std_theta);
 }
 
 void ParticleFilter::apply_motion_model(Particle &particle, const double& delta_t, const double& velocity, const double &yaw_rate) {
   // This is the implementation of the simple bicycle motion model, applied to a particle
-  particle.x = particle.x + (velocity / yaw_rate) * (std::sin(particle.theta + (delta_t * yaw_rate)) - std::sin(particle.theta));
-  particle.y = particle.y + (velocity / yaw_rate) * (std::cos(particle.theta) - std::cos(particle.theta + (delta_t * yaw_rate)));
+  double yaw_rate_dt = yaw_rate * delta_t;
+  double theta_yaw_rate_dt = particle.theta + yaw_rate_dt;
 
-  particle.theta = particle.theta + yaw_rate;
+  if(abs(yaw_rate) < 1e-8) {
+    particle.x += velocity * delta_t * cos(particle.theta); // see Lession 14 - Robot class movement
+    particle.y += velocity * delta_t * sin(particle.theta);
+  }
+  else
+  {
+    double velo_over_yaw_rate = velocity / yaw_rate;
+
+    particle.x += velo_over_yaw_rate * (sin(theta_yaw_rate_dt) - sin(particle.theta));
+    particle.y += velo_over_yaw_rate * (cos(particle.theta) - cos(theta_yaw_rate_dt));
+  }
+
+  particle.theta += yaw_rate_dt;
 }
 
 void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::vector<LandmarkObs>& observations) {
@@ -105,19 +190,20 @@ bool ParticleFilter::dataAssociation(Particle& particle, const std::vector<Landm
   // Clear destination
   particle.sense_x.clear();
   particle.sense_y.clear();
+  particle.associations.clear();
 
   //std::vector<double> dists;
 
   // For every observed landmark, we look for the nearest map landmark
   double cur_dist, min_dist; // by intention stay uninitialized until first iteration
-  double min_dist_x, min_dist_y;
+  double min_dist_x, min_dist_y, min_dist_id;
 
   for(const auto& landmark : transformed) {
     cur_dist = -1.0;
     min_dist = -1.0;
     min_dist_x = -1;
     min_dist_y = -1;
-
+    min_dist_id= -1;
     for(const auto& map_lm : map.landmark_list) {
       // Compute euclidean distance
       cur_dist = dist(landmark.x,landmark.y, map_lm.x_f, map_lm.y_f);
@@ -126,13 +212,15 @@ bool ParticleFilter::dataAssociation(Particle& particle, const std::vector<Landm
       if(min_dist < 0.0 || cur_dist < min_dist)  {
         min_dist = cur_dist;
         min_dist_x = map_lm.x_f;
-        min_dist_y = map_lm.x_f;
+        min_dist_y = map_lm.y_f;
+        min_dist_id = map_lm.id_i;
       }
     }
     //dists.push_back(cur_dist);
 
     particle.sense_x.push_back(min_dist_x);
     particle.sense_y.push_back(min_dist_y);
+    particle.associations.push_back(min_dist_id);
   }
   //std::cout << "particle x: " << particle.x << " y: " << particle.y << std::endl;
   //std::cout << "min_dist : " << *std::min_element(dists.begin(), dists.end()) << " max: " << *std::max_element(dists.begin(), dists.end())  << std::endl;
@@ -147,15 +235,19 @@ void ParticleFilter::setWeight(Particle &particle, const double& std_x, const do
 
   int id=0;
   for(const auto& landmark : transformed) {
-    particle.weight *= multi_variant_gaussian_prob(std_x,
+    multi_variant_probs.push_back(multi_variant_gaussian_prob(std_x,
                                                    std_y,
                                                    landmark.x,
                                                    landmark.y,
                                                    particle.sense_x[id],
-                                                   particle.sense_y[id]);
+                                                   particle.sense_y[id]));
 
     id++;
   }
+  for(const auto& cweight:multi_variant_probs) {
+    particle.weight *= cweight;
+  }
+
 }
 
 
@@ -173,6 +265,49 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	//   http://planning.cs.uiuc.edu/node99.html
 
   // For every particle apply the following pipeline:
+  weights.clear();
+
+#ifdef MULTI_THREADING
+  // This loop is made to be parallelized
+  // Create lists of particle references for the n threads
+  std::vector<std::vector<Particle*> > particle_vectors(num_threads, std::vector<Particle*>());
+  for(int i = 0; i < particles.size(); i++)
+    particle_vectors[i % num_threads].push_back(&particles[i]);
+
+  // Create a vector of all threads
+  std::vector<std::thread> threads;
+
+  for(auto& particle_vec : particle_vectors)
+    // Add a new thread to the list of threads
+    threads.push_back(std::thread([&](){
+      // This thread will process this lambda function
+      // that applies the processing pipeline to a subset of all particles
+      for(auto& particle : particle_vec) {
+
+        // copy the original observations from the sensors
+        std::vector<LandmarkObs> transformedObservations(observations);
+
+        // Transform to the map coordinate system
+        transformCoordinateSystem(*particle, transformedObservations);
+
+        if(!dataAssociation(*particle, transformedObservations, map_landmarks))
+          std::cout << "There was an error computing the associations!" << std::endl;
+
+        setWeight(*particle, std_landmark[0], std_landmark[1], transformedObservations);
+      }
+    }));
+
+  // Wait for the threads to finish computation
+  for(auto& t : threads)
+    t.join();
+
+  // Collect weights
+  for(const auto& particle: particles)
+    weights.push_back(particle.weight);
+
+#else
+
+  // The single threading variant
   for(auto& particle : particles) {
     // copy the original observations from the sensors
     std::vector<LandmarkObs> transformedObservations(observations);
@@ -184,7 +319,10 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
       std::cout << "There was an error computing the associations!" << std::endl;
 
     setWeight(particle, std_landmark[0], std_landmark[1], transformedObservations);
+
+    weights.push_back(particle.weight);
   }
+#endif
 }
 
 void ParticleFilter::transformCoordinateSystem(const Particle &particle, std::vector<LandmarkObs> &observations) {
@@ -216,8 +354,12 @@ void ParticleFilter::resample() {
 
   random_generator.resample(weights, particles.size(), resampled_ids);
 
-  for(const auto& id:resampled_ids)
+  std::vector<double> selected_weights;
+
+  for(const auto& id:resampled_ids) {
+    selected_weights.push_back(particles[id].weight);
     new_particles.push_back(particles[id]);
+  }
 
   particles = new_particles;
 }

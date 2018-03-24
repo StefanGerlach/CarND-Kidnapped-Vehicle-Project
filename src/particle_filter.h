@@ -31,6 +31,9 @@ class ParticleFilter {
 	// Number of particles to draw
 	int num_particles; 
 	
+	// Number of threads spawned
+	int num_threads;
+
 	// Random number generator
 	RandomGenerator random_generator;
 	
@@ -78,7 +81,12 @@ public:
 	/**
 	 * applies the bicycle motion model to a given particle.
 	 */
-	static inline void apply_motion_model(Particle &particle, const double& delta_t, const double& velocity, const double &yaw_rate);
+	inline void apply_motion_model(Particle &particle, const double& delta_t, const double& velocity, const double &yaw_rate);
+
+	/**
+	 * Applies position noise
+	 */
+	inline void apply_position_noise(Particle &particle, const double& std_x, const double& std_y, const double& std_theta);
 
 	/**
 	 * dataAssociation Finds which observations correspond to which landmarks (likely by using
