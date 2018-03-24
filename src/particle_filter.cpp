@@ -347,19 +347,14 @@ void ParticleFilter::resample() {
   std::vector<int> resampled_ids;
   std::vector<Particle> new_particles;
 
-  for(const auto& p : particles)  {
+  for(const auto& p : particles)
     weights.push_back(p.weight);
-  }
-  std::cout << "min_weight : " << *std::min_element(weights.begin(), weights.end()) << " max: " << *std::max_element(weights.begin(), weights.end())  << std::endl;
 
+  // std::cout << "min_weight : " << *std::min_element(weights.begin(), weights.end()) << " max: " << *std::max_element(weights.begin(), weights.end())  << std::endl;
   random_generator.resample(weights, particles.size(), resampled_ids);
 
-  std::vector<double> selected_weights;
-
-  for(const auto& id:resampled_ids) {
-    selected_weights.push_back(particles[id].weight);
+  for(const auto& id : resampled_ids)
     new_particles.push_back(particles[id]);
-  }
 
   particles = new_particles;
 }
